@@ -1,5 +1,7 @@
 package com.example.otp;
 
+import com.example.otp.api.middleware.AuthMiddleware;
+import com.example.otp.api.middleware.RoleGuard;
 import com.example.otp.api.response.HttpResponseWriter;
 import com.example.otp.api.router.Router;
 import com.example.otp.application.port.PasswordHasher;
@@ -43,6 +45,9 @@ public class Main {
                 appConfig.tokenTtlSeconds()
         );
 
+        AuthMiddleware authMiddleware = new AuthMiddleware(tokenProvider);
+        RoleGuard roleGuard = new RoleGuard();
+
         JsonMapper jsonMapper = new JsonMapper();
         HttpResponseWriter responseWriter = new HttpResponseWriter(jsonMapper);
 
@@ -55,7 +60,9 @@ public class Main {
                 server,
                 authService,
                 jsonMapper,
-                responseWriter
+                responseWriter,
+                authMiddleware,
+                roleGuard
         );
 
         router.registerRoutes();
