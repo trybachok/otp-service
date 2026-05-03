@@ -3,6 +3,7 @@ package com.example.otp;
 import com.example.otp.api.response.HttpResponseWriter;
 import com.example.otp.api.router.Router;
 import com.example.otp.application.port.PasswordHasher;
+import com.example.otp.application.port.TokenProvider;
 import com.example.otp.application.service.AuthService;
 import com.example.otp.config.AppConfig;
 import com.example.otp.infrastructure.dao.UserDao;
@@ -11,6 +12,7 @@ import com.example.otp.infrastructure.db.ConnectionFactory;
 import com.example.otp.infrastructure.db.DatabaseMigrator;
 import com.example.otp.infrastructure.json.JsonMapper;
 import com.example.otp.infrastructure.security.BCryptPasswordHasher;
+import com.example.otp.infrastructure.security.JwtTokenProvider;
 import com.sun.net.httpserver.HttpServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,8 +34,14 @@ public class Main {
 
         UserDao userDao = new JdbcUserDao(connectionFactory);
         PasswordHasher passwordHasher = new BCryptPasswordHasher();
+        TokenProvider tokenProvider = new JwtTokenProvider(appConfig);
 
-        AuthService authService = new AuthService(userDao, passwordHasher);
+        AuthService authService = new AuthService(
+                userDao,
+                passwordHasher,
+                tokenProvider,
+                appConfig.tokenTtlSeconds()
+        );
 
         JsonMapper jsonMapper = new JsonMapper();
         HttpResponseWriter responseWriter = new HttpResponseWriter(jsonMapper);

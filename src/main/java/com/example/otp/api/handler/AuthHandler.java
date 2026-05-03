@@ -1,5 +1,7 @@
 package com.example.otp.api.handler;
 
+import com.example.otp.api.dto.auth.LoginRequest;
+import com.example.otp.api.dto.auth.LoginResponse;
 import com.example.otp.api.dto.auth.RegisterRequest;
 import com.example.otp.api.dto.auth.RegisterResponse;
 import com.example.otp.api.response.ErrorResponse;
@@ -7,6 +9,7 @@ import com.example.otp.api.response.HttpResponseWriter;
 import com.example.otp.application.service.AuthService;
 import com.example.otp.domain.exception.BadRequestException;
 import com.example.otp.domain.exception.ConflictException;
+import com.example.otp.domain.exception.UnauthorizedException;
 import com.example.otp.domain.model.User;
 import com.example.otp.infrastructure.json.JsonMapper;
 import com.sun.net.httpserver.HttpExchange;
@@ -39,8 +42,15 @@ public final class AuthHandler implements HttpHandler {
         long startedAt = System.currentTimeMillis();
 
         try {
-            if ("/api/auth/register".equals(exchange.getRequestURI().getPath())) {
+            String path = exchange.getRequestURI().getPath();
+
+            if ("/api/auth/register".equals(path)) {
                 handleRegister(exchange);
+                return;
+            }
+
+            if ("/api/auth/login".equals(path)) {
+                handleLogin(exchange);
                 return;
             }
 
@@ -48,30 +58,42 @@ public final class AuthHandler implements HttpHandler {
                     "NOT_FOUND",
                     "Endpoint not found"
             ));
+
         } catch (BadRequestException exception) {
             logger.warn("Bad request on auth endpoint: {}", exception.getMessage());
             responseWriter.json(exchange, 400, new ErrorResponse(
                     "BAD_REQUEST",
                     exception.getMessage()
             ));
+
         } catch (ConflictException exception) {
             logger.warn("Conflict on auth endpoint: {}", exception.getMessage());
             responseWriter.json(exchange, 409, new ErrorResponse(
                     "CONFLICT",
                     exception.getMessage()
             ));
+
+        } catch (UnauthorizedException exception) {
+            logger.warn("Unauthorized request on auth endpoint: {}", exception.getMessage());
+            responseWriter.json(exchange, 401, new ErrorResponse(
+                    "UNAUTHORIZED",
+                    exception.getMessage()
+            ));
+
         } catch (IllegalArgumentException exception) {
             logger.warn("Invalid JSON on auth endpoint: {}", exception.getMessage());
             responseWriter.json(exchange, 400, new ErrorResponse(
                     "BAD_REQUEST",
                     "Invalid JSON request body"
             ));
+
         } catch (Exception exception) {
             logger.error("Unexpected error on auth endpoint", exception);
             responseWriter.json(exchange, 500, new ErrorResponse(
                     "INTERNAL_ERROR",
                     "Internal server error"
             ));
+
         } finally {
             long durationMs = System.currentTimeMillis() - startedAt;
             logger.info("{} {} completed in {} ms",
@@ -109,5 +131,33 @@ public final class AuthHandler implements HttpHandler {
         );
 
         responseWriter.json(exchange, 201, response);
+    }
+
+    private void handleLogin(HttpExchange exchange) throws IOException {
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            responseWriter.json(exchange, 405, new ErrorResponse(
+                    "METHOD_NOT_ALLOWED",
+                    "Method not allowed"
+            ));
+            return;
+        }
+
+        LoginRequest request = jsonMapper.read(
+                exchange.getRequestBody(),
+                LoginRequest.class
+        );
+
+        String token = authService.login(
+                request.getLogin(),
+                request.getPassword()
+        );
+
+        LoginResponse response = new LoginResponse(
+                token,
+                "Bearer",
+                authService.tokenTtlSeconds()
+        );
+
+        responseWriter.json(exchange, 200, response);
     }
 }

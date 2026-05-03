@@ -1,8 +1,10 @@
 package com.example.otp.application.service;
 
 import com.example.otp.application.port.PasswordHasher;
+import com.example.otp.application.port.TokenProvider;
 import com.example.otp.domain.exception.BadRequestException;
 import com.example.otp.domain.exception.ConflictException;
+import com.example.otp.domain.exception.UnauthorizedException;
 import com.example.otp.domain.model.Role;
 import com.example.otp.domain.model.User;
 import com.example.otp.infrastructure.dao.UserDao;
@@ -18,10 +20,19 @@ public final class AuthService {
 
     private final UserDao userDao;
     private final PasswordHasher passwordHasher;
+    private final TokenProvider tokenProvider;
+    private final long tokenTtlSeconds;
 
-    public AuthService(UserDao userDao, PasswordHasher passwordHasher) {
+    public AuthService(
+            UserDao userDao,
+            PasswordHasher passwordHasher,
+            TokenProvider tokenProvider,
+            long tokenTtlSeconds
+    ) {
         this.userDao = userDao;
         this.passwordHasher = passwordHasher;
+        this.tokenProvider = tokenProvider;
+        this.tokenTtlSeconds = tokenTtlSeconds;
     }
 
     public User register(String login, String password, String roleValue) {
@@ -56,6 +67,36 @@ public final class AuthService {
         );
 
         return savedUser;
+    }
+
+    public String login(String login, String password) {
+        String normalizedLogin = validateLogin(login);
+        String normalizedPassword = validatePassword(password);
+
+        User user = userDao.findByLogin(normalizedLogin)
+                .orElseThrow(() -> {
+                    logger.warn("Login failed: user not found login={}", normalizedLogin);
+                    return new UnauthorizedException("Invalid login or password");
+                });
+
+        if (!passwordHasher.verify(normalizedPassword, user.passwordHash())) {
+            logger.warn("Login failed: invalid password userId={} login={}", user.id(), user.login());
+            throw new UnauthorizedException("Invalid login or password");
+        }
+
+        String token = tokenProvider.generate(user);
+
+        logger.info("User logged in successfully userId={} login={} role={}",
+                user.id(),
+                user.login(),
+                user.role()
+        );
+
+        return token;
+    }
+
+    public long tokenTtlSeconds() {
+        return tokenTtlSeconds;
     }
 
     private String validateLogin(String login) {

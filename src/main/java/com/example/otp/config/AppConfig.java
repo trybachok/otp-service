@@ -11,19 +11,25 @@ public final class AppConfig {
     private final String databaseUsername;
     private final String databasePassword;
     private final String flywayLocations;
+    private final String tokenSecret;
+    private final long tokenTtlSeconds;
 
     private AppConfig(
             int serverPort,
             String databaseUrl,
             String databaseUsername,
             String databasePassword,
-            String flywayLocations
+            String flywayLocations,
+            String tokenSecret,
+            long tokenTtlSeconds
     ) {
         this.serverPort = serverPort;
         this.databaseUrl = databaseUrl;
         this.databaseUsername = databaseUsername;
         this.databasePassword = databasePassword;
         this.flywayLocations = flywayLocations;
+        this.tokenSecret = tokenSecret;
+        this.tokenTtlSeconds = tokenTtlSeconds;
     }
 
     public static AppConfig load() {
@@ -38,12 +44,20 @@ public final class AppConfig {
         String databasePassword = getValue(properties, "db.password", "DB_PASSWORD", null);
         String flywayLocations = getValue(properties, "flyway.locations", "FLYWAY_LOCATIONS", "classpath:db/migration");
 
+        String tokenSecret = getValue(properties, "token.secret", "TOKEN_SECRET", null);
+
+        long tokenTtlSeconds = Long.parseLong(
+                getValue(properties, "token.ttl.seconds", "TOKEN_TTL_SECONDS", "3600")
+        );
+
         return new AppConfig(
                 serverPort,
                 databaseUrl,
                 databaseUsername,
                 databasePassword,
-                flywayLocations
+                flywayLocations,
+                tokenSecret,
+                tokenTtlSeconds
         );
     }
 
@@ -107,5 +121,13 @@ public final class AppConfig {
         }
 
         throw new IllegalStateException("Required configuration value is missing: " + propertyName);
+    }
+
+    public String tokenSecret() {
+        return tokenSecret;
+    }
+
+    public long tokenTtlSeconds() {
+        return tokenTtlSeconds;
     }
 }
