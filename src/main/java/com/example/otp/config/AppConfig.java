@@ -1,33 +1,111 @@
 package com.example.otp.config;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.Properties;
+
 public final class AppConfig {
 
     private final int serverPort;
+    private final String databaseUrl;
+    private final String databaseUsername;
+    private final String databasePassword;
+    private final String flywayLocations;
 
-    private AppConfig(int serverPort) {
+    private AppConfig(
+            int serverPort,
+            String databaseUrl,
+            String databaseUsername,
+            String databasePassword,
+            String flywayLocations
+    ) {
         this.serverPort = serverPort;
+        this.databaseUrl = databaseUrl;
+        this.databaseUsername = databaseUsername;
+        this.databasePassword = databasePassword;
+        this.flywayLocations = flywayLocations;
     }
 
     public static AppConfig load() {
-        String portValue = System.getenv().getOrDefault("SERVER_PORT", "8080");
-        int port = parsePort(portValue);
+        Properties properties = loadProperties();
 
-        return new AppConfig(port);
+        int serverPort = Integer.parseInt(
+                getValue(properties, "server.port", "SERVER_PORT", "8081")
+        );
+
+        String databaseUrl = getValue(properties, "db.url", "DB_URL", null);
+        String databaseUsername = getValue(properties, "db.username", "DB_USERNAME", null);
+        String databasePassword = getValue(properties, "db.password", "DB_PASSWORD", null);
+        String flywayLocations = getValue(properties, "flyway.locations", "FLYWAY_LOCATIONS", "classpath:db/migration");
+
+        return new AppConfig(
+                serverPort,
+                databaseUrl,
+                databaseUsername,
+                databasePassword,
+                flywayLocations
+        );
     }
 
     public int serverPort() {
         return serverPort;
     }
 
-    private static int parsePort(String portValue) {
-        try {
-            int port = Integer.parseInt(portValue);
-            if (port < 1 || port > 65535) {
-                throw new IllegalArgumentException("SERVER_PORT must be between 1 and 65535, but was: " + portValue);
+    public String databaseUrl() {
+        return databaseUrl;
+    }
+
+    public String databaseUsername() {
+        return databaseUsername;
+    }
+
+    public String databasePassword() {
+        return databasePassword;
+    }
+
+    public String flywayLocations() {
+        return flywayLocations;
+    }
+
+    private static Properties loadProperties() {
+        Properties properties = new Properties();
+
+        try (InputStream inputStream = AppConfig.class
+                .getClassLoader()
+                .getResourceAsStream("application.properties")) {
+
+            if (inputStream != null) {
+                properties.load(inputStream);
             }
-            return port;
-        } catch (NumberFormatException exception) {
-            throw new IllegalArgumentException("SERVER_PORT must be a valid integer, but was: " + portValue, exception);
+
+            return properties;
+        } catch (IOException exception) {
+            throw new IllegalStateException("Failed to load application.properties", exception);
         }
+    }
+
+    private static String getValue(
+            Properties properties,
+            String propertyName,
+            String environmentName,
+            String defaultValue
+    ) {
+        String environmentValue = System.getenv(environmentName);
+
+        if (environmentValue != null && !environmentValue.isBlank()) {
+            return environmentValue;
+        }
+
+        String propertyValue = properties.getProperty(propertyName);
+
+        if (propertyValue != null && !propertyValue.isBlank()) {
+            return propertyValue;
+        }
+
+        if (defaultValue != null) {
+            return defaultValue;
+        }
+
+        throw new IllegalStateException("Required configuration value is missing: " + propertyName);
     }
 }
