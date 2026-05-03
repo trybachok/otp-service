@@ -7,8 +7,12 @@ import com.example.otp.api.router.Router;
 import com.example.otp.application.port.PasswordHasher;
 import com.example.otp.application.port.TokenProvider;
 import com.example.otp.application.service.AuthService;
+import com.example.otp.application.service.OtpConfigService;
+import com.example.otp.application.service.UserService;
 import com.example.otp.config.AppConfig;
+import com.example.otp.infrastructure.dao.OtpConfigDao;
 import com.example.otp.infrastructure.dao.UserDao;
+import com.example.otp.infrastructure.dao.jdbc.JdbcOtpConfigDao;
 import com.example.otp.infrastructure.dao.jdbc.JdbcUserDao;
 import com.example.otp.infrastructure.db.ConnectionFactory;
 import com.example.otp.infrastructure.db.DatabaseMigrator;
@@ -35,6 +39,8 @@ public class Main {
         ConnectionFactory connectionFactory = new ConnectionFactory(appConfig);
 
         UserDao userDao = new JdbcUserDao(connectionFactory);
+        OtpConfigDao otpConfigDao = new JdbcOtpConfigDao(connectionFactory);
+
         PasswordHasher passwordHasher = new BCryptPasswordHasher();
         TokenProvider tokenProvider = new JwtTokenProvider(appConfig);
 
@@ -44,6 +50,9 @@ public class Main {
                 tokenProvider,
                 appConfig.tokenTtlSeconds()
         );
+
+        OtpConfigService otpConfigService = new OtpConfigService(otpConfigDao);
+        UserService userService = new UserService(userDao);
 
         AuthMiddleware authMiddleware = new AuthMiddleware(tokenProvider);
         RoleGuard roleGuard = new RoleGuard();
@@ -62,7 +71,9 @@ public class Main {
                 jsonMapper,
                 responseWriter,
                 authMiddleware,
-                roleGuard
+                roleGuard,
+                otpConfigService,
+                userService
         );
 
         router.registerRoutes();

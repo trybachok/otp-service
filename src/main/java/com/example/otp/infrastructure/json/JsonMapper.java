@@ -1,6 +1,7 @@
 package com.example.otp.infrastructure.json;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -11,6 +12,7 @@ public final class JsonMapper {
 
     public JsonMapper() {
         this.objectMapper = new ObjectMapper();
+        this.objectMapper.registerModule(new JavaTimeModule());
     }
 
     public <T> T read(InputStream inputStream, Class<T> targetClass) {
