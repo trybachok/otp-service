@@ -309,3 +309,27 @@ TELEGRAM_BOT_TOKEN=<telegram-bot-token>
 ```dotenv
 OTP_EXPIRATION_SCHEDULER_INTERVAL_SECONDS=60
 ```
+
+## Покрытие автотестами
+
+В проекте реализовано покрытие как unit-тестами, так и интеграционными тестами.
+
+Тестами покрыто:
+* Бизнес-логика OTP
+* Аутентификация и авторизация
+* HTTP API
+* Scheduler (фоновые задачи)
+* Каналы отправки (частично через моки)
+
+### Стек тестирования
+
+- JUnit 5
+- Mockito
+- In-memory реализации DAO
+- Maven Surefire Plugin
+
+Запуск всех тестов:
+
+```bash
+mvn clean test
+```
