@@ -1,22 +1,25 @@
 package com.example.otp.application.service;
 
+import com.example.otp.api.dto.otp.DeliveryDestination;
 import com.example.otp.application.port.OtpCodeGenerator;
 import com.example.otp.application.port.OtpMessage;
-import com.example.otp.application.port.OtpSender;
 import com.example.otp.application.port.PasswordHasher;
 import com.example.otp.domain.exception.BadRequestException;
 import com.example.otp.domain.exception.NotFoundException;
 import com.example.otp.domain.model.Operation;
+import com.example.otp.domain.model.OtpChannel;
 import com.example.otp.domain.model.OtpCode;
 import com.example.otp.domain.model.OtpConfig;
 import com.example.otp.domain.model.OtpStatus;
 import com.example.otp.infrastructure.dao.OperationDao;
 import com.example.otp.infrastructure.dao.OtpCodeDao;
 import com.example.otp.infrastructure.dao.OtpConfigDao;
+import com.example.otp.infrastructure.sender.CompositeOtpSender;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 public final class OtpService {
@@ -28,7 +31,7 @@ public final class OtpService {
     private final OtpCodeDao otpCodeDao;
     private final OtpCodeGenerator otpCodeGenerator;
     private final PasswordHasher passwordHasher;
-    private final OtpSender otpSender;
+    private final CompositeOtpSender otpSender;
 
     public OtpService(
             OtpConfigDao otpConfigDao,
@@ -36,7 +39,7 @@ public final class OtpService {
             OtpCodeDao otpCodeDao,
             OtpCodeGenerator otpCodeGenerator,
             PasswordHasher passwordHasher,
-            OtpSender otpSender
+            CompositeOtpSender otpSender
     ) {
         this.otpConfigDao = otpConfigDao;
         this.operationDao = operationDao;
@@ -47,8 +50,19 @@ public final class OtpService {
     }
 
     public OtpCode generate(UUID userId, String operationId, String description) {
+        return generate(userId, operationId, description, List.of("FILE"), null);
+    }
+
+    public OtpCode generate(
+            UUID userId,
+            String operationId,
+            String description,
+            List<String> channelValues,
+            DeliveryDestination destination
+    ) {
         String normalizedOperationId = validateOperationId(operationId);
         String normalizedDescription = normalizeDescription(description);
+        List<OtpChannel> channels = parseChannels(channelValues);
 
         OtpConfig config = otpConfigDao.getConfig();
         String plainCode = otpCodeGenerator.generate(config.codeLength());
@@ -73,16 +87,20 @@ public final class OtpService {
 
         OtpCode savedOtpCode = otpCodeDao.save(otpCode);
 
-        otpSender.send(new OtpMessage(
+        otpSender.send(channels, new OtpMessage(
                 userId,
                 normalizedOperationId,
-                plainCode
+                plainCode,
+                destination == null ? null : destination.getPhone(),
+                destination == null ? null : destination.getEmail(),
+                destination == null ? null : destination.getTelegramChatId()
         ));
 
-        logger.info("OTP generated userId={} operationId={} otpId={} expiresAt={}",
+        logger.info("OTP generated userId={} operationId={} otpId={} channels={} expiresAt={}",
                 userId,
                 normalizedOperationId,
                 savedOtpCode.id(),
+                channels,
                 savedOtpCode.expiresAt()
         );
 
@@ -95,45 +113,20 @@ public final class OtpService {
 
         Operation operation = operationDao
                 .findByUserIdAndOperationId(userId, normalizedOperationId)
-                .orElseThrow(() -> {
-                    logger.warn("OTP validation failed: operation not found userId={} operationId={}",
-                            userId,
-                            normalizedOperationId
-                    );
-                    return new NotFoundException("Active OTP code not found");
-                });
+                .orElseThrow(() -> new NotFoundException("Active OTP code not found"));
 
         OtpCode otpCode = otpCodeDao
                 .findActiveByUserIdAndOperationId(userId, operation.id())
-                .orElseThrow(() -> {
-                    logger.warn("OTP validation failed: active code not found userId={} operationId={}",
-                            userId,
-                            normalizedOperationId
-                    );
-                    return new NotFoundException("Active OTP code not found");
-                });
+                .orElseThrow(() -> new NotFoundException("Active OTP code not found"));
 
         Instant now = Instant.now();
 
         if (otpCode.expiresAt().isBefore(now) || otpCode.expiresAt().equals(now)) {
             otpCodeDao.markExpired(otpCode.id());
-
-            logger.warn("OTP validation failed: code expired userId={} operationId={} otpId={}",
-                    userId,
-                    normalizedOperationId,
-                    otpCode.id()
-            );
-
             throw new BadRequestException("OTP code expired");
         }
 
         if (!passwordHasher.verify(normalizedCode, otpCode.codeHash())) {
-            logger.warn("OTP validation failed: invalid code userId={} operationId={} otpId={}",
-                    userId,
-                    normalizedOperationId,
-                    otpCode.id()
-            );
-
             throw new BadRequestException("Invalid OTP code");
         }
 
@@ -156,6 +149,29 @@ public final class OtpService {
                 otpCode.createdAt(),
                 usedAt
         );
+    }
+
+    private List<OtpChannel> parseChannels(List<String> channelValues) {
+        if (channelValues == null || channelValues.isEmpty()) {
+            return List.of(OtpChannel.FILE);
+        }
+
+        return channelValues.stream()
+                .map(this::parseChannel)
+                .distinct()
+                .toList();
+    }
+
+    private OtpChannel parseChannel(String value) {
+        if (value == null || value.isBlank()) {
+            throw new BadRequestException("OTP channel is required");
+        }
+
+        try {
+            return OtpChannel.valueOf(value.trim().toUpperCase());
+        } catch (IllegalArgumentException exception) {
+            throw new BadRequestException("Unsupported OTP channel: " + value);
+        }
     }
 
     private Operation createOperation(UUID userId, String operationId, String description) {

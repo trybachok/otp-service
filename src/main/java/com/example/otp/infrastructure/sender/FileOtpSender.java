@@ -2,6 +2,7 @@ package com.example.otp.infrastructure.sender;
 
 import com.example.otp.application.port.OtpMessage;
 import com.example.otp.application.port.OtpSender;
+import com.example.otp.domain.model.OtpChannel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -22,8 +23,13 @@ public final class FileOtpSender implements OtpSender {
     }
 
     @Override
+    public OtpChannel channel() {
+        return OtpChannel.FILE;
+    }
+
+    @Override
     public void send(OtpMessage message) {
-        String line = "%s userId=%s operationId=%s code=%s%n".formatted(
+        String line = "%s userId=%s operationId=%s channel=FILE code=%s%n".formatted(
                 Instant.now(),
                 message.userId(),
                 message.operationId(),
@@ -38,13 +44,13 @@ public final class FileOtpSender implements OtpSender {
                     StandardOpenOption.APPEND
             );
 
-            logger.info("OTP code saved to file userId={} operationId={} file={}",
+            logger.info("OTP saved to file userId={} operationId={} file={}",
                     message.userId(),
                     message.operationId(),
                     filePath
             );
         } catch (IOException exception) {
-            logger.error("Failed to save OTP code to file userId={} operationId={}",
+            logger.error("Failed to save OTP to file userId={} operationId={}",
                     message.userId(),
                     message.operationId(),
                     exception

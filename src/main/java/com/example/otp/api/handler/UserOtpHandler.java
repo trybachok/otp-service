@@ -69,97 +69,62 @@ public final class UserOtpHandler implements HttpHandler {
                 return;
             }
 
-            responseWriter.json(exchange, 404, new ErrorResponse(
-                    "NOT_FOUND",
-                    "Endpoint not found"
-            ));
+            responseWriter.json(exchange, 404, new ErrorResponse("NOT_FOUND", "Endpoint not found"));
 
         } catch (UnauthorizedException exception) {
-            logger.warn("Unauthorized user OTP request: {}", exception.getMessage());
             responseWriter.json(exchange, 401, new ErrorResponse("UNAUTHORIZED", exception.getMessage()));
-
         } catch (ForbiddenException exception) {
-            logger.warn("Forbidden user OTP request: {}", exception.getMessage());
             responseWriter.json(exchange, 403, new ErrorResponse("FORBIDDEN", exception.getMessage()));
-
         } catch (BadRequestException exception) {
-            logger.warn("Bad user OTP request: {}", exception.getMessage());
             responseWriter.json(exchange, 400, new ErrorResponse("BAD_REQUEST", exception.getMessage()));
-
         } catch (NotFoundException exception) {
-            logger.warn("User OTP resource not found: {}", exception.getMessage());
             responseWriter.json(exchange, 404, new ErrorResponse("NOT_FOUND", exception.getMessage()));
-
         } catch (IllegalArgumentException exception) {
-            logger.warn("Invalid user OTP request: {}", exception.getMessage());
             responseWriter.json(exchange, 400, new ErrorResponse("BAD_REQUEST", "Invalid request"));
-
         } catch (Exception exception) {
             logger.error("Unexpected error on user OTP endpoint", exception);
             responseWriter.json(exchange, 500, new ErrorResponse("INTERNAL_ERROR", "Internal server error"));
-
         } finally {
-            long durationMs = System.currentTimeMillis() - startedAt;
             logger.info("{} {} completed in {} ms",
                     exchange.getRequestMethod(),
                     exchange.getRequestURI().getPath(),
-                    durationMs
+                    System.currentTimeMillis() - startedAt
             );
         }
     }
 
-    private void handleGenerate(
-            HttpExchange exchange,
-            String method,
-            AuthenticatedUser user
-    ) throws IOException {
+    private void handleGenerate(HttpExchange exchange, String method, AuthenticatedUser user) throws IOException {
         if (!"POST".equalsIgnoreCase(method)) {
-            responseWriter.json(exchange, 405, new ErrorResponse(
-                    "METHOD_NOT_ALLOWED",
-                    "Method not allowed"
-            ));
+            responseWriter.json(exchange, 405, new ErrorResponse("METHOD_NOT_ALLOWED", "Method not allowed"));
             return;
         }
 
-        GenerateOtpRequest request = jsonMapper.read(
-                exchange.getRequestBody(),
-                GenerateOtpRequest.class
-        );
+        GenerateOtpRequest request = jsonMapper.read(exchange.getRequestBody(), GenerateOtpRequest.class);
 
         OtpCode otpCode = otpService.generate(
                 user.userId(),
                 request.getOperationId(),
-                request.getDescription()
+                request.getDescription(),
+                request.getChannels(),
+                request.getDestination()
         );
 
-        GenerateOtpResponse response = new GenerateOtpResponse(
+        responseWriter.json(exchange, 201, new GenerateOtpResponse(
                 otpCode.id(),
                 otpCode.operationId(),
                 request.getOperationId(),
                 otpCode.status().name(),
                 otpCode.expiresAt()
-        );
-
-        responseWriter.json(exchange, 201, response);
+        ));
     }
 
-    private void handleValidate(
-            HttpExchange exchange,
-            String method,
-            AuthenticatedUser user
-    ) throws IOException {
+    private void handleValidate(HttpExchange exchange, String method, AuthenticatedUser user) throws IOException {
         if (!"POST".equalsIgnoreCase(method)) {
-            responseWriter.json(exchange, 405, new ErrorResponse(
-                    "METHOD_NOT_ALLOWED",
-                    "Method not allowed"
-            ));
+            responseWriter.json(exchange, 405, new ErrorResponse("METHOD_NOT_ALLOWED", "Method not allowed"));
             return;
         }
 
-        ValidateOtpRequest request = jsonMapper.read(
-                exchange.getRequestBody(),
-                ValidateOtpRequest.class
-        );
+        ValidateOtpRequest request = jsonMapper.read(exchange.getRequestBody(), ValidateOtpRequest.class);
 
         OtpCode otpCode = otpService.validate(
                 user.userId(),
@@ -167,13 +132,11 @@ public final class UserOtpHandler implements HttpHandler {
                 request.getCode()
         );
 
-        ValidateOtpResponse response = new ValidateOtpResponse(
+        responseWriter.json(exchange, 200, new ValidateOtpResponse(
                 otpCode.id(),
                 request.getOperationId(),
                 otpCode.status().name(),
                 true
-        );
-
-        responseWriter.json(exchange, 200, response);
+        ));
     }
 }

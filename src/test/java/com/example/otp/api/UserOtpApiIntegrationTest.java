@@ -26,6 +26,7 @@ import com.example.otp.infrastructure.dao.UserDao;
 import com.example.otp.infrastructure.json.JsonMapper;
 import com.example.otp.infrastructure.security.BCryptPasswordHasher;
 import com.example.otp.infrastructure.security.JwtTokenProvider;
+import com.example.otp.infrastructure.sender.CompositeOtpSender;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
@@ -72,8 +73,57 @@ class UserOtpApiIntegrationTest {
         PasswordHasher passwordHasher = new BCryptPasswordHasher();
         TokenProvider tokenProvider = new JwtTokenProvider(appConfig);
         OtpCodeGenerator otpCodeGenerator = length -> "123456";
-        OtpSender otpSender = message -> {
+
+        OtpSender fileSender = new OtpSender() {
+            @Override
+            public com.example.otp.domain.model.OtpChannel channel() {
+                return com.example.otp.domain.model.OtpChannel.FILE;
+            }
+
+            @Override
+            public void send(com.example.otp.application.port.OtpMessage message) {
+            }
         };
+
+        OtpSender smsSender = new OtpSender() {
+            @Override
+            public com.example.otp.domain.model.OtpChannel channel() {
+                return com.example.otp.domain.model.OtpChannel.SMS;
+            }
+
+            @Override
+            public void send(com.example.otp.application.port.OtpMessage message) {
+            }
+        };
+
+        OtpSender emailSender = new OtpSender() {
+            @Override
+            public com.example.otp.domain.model.OtpChannel channel() {
+                return com.example.otp.domain.model.OtpChannel.EMAIL;
+            }
+
+            @Override
+            public void send(com.example.otp.application.port.OtpMessage message) {
+            }
+        };
+
+        OtpSender telegramSender = new OtpSender() {
+            @Override
+            public com.example.otp.domain.model.OtpChannel channel() {
+                return com.example.otp.domain.model.OtpChannel.TELEGRAM;
+            }
+
+            @Override
+            public void send(com.example.otp.application.port.OtpMessage message) {
+            }
+        };
+
+        CompositeOtpSender otpSender = new CompositeOtpSender(List.of(
+                fileSender,
+                smsSender,
+                emailSender,
+                telegramSender
+        ));
 
         AuthService authService = new AuthService(
                 userDao,

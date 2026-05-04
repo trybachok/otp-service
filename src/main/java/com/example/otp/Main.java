@@ -27,7 +27,11 @@ import com.example.otp.infrastructure.json.JsonMapper;
 import com.example.otp.infrastructure.security.BCryptPasswordHasher;
 import com.example.otp.infrastructure.security.JwtTokenProvider;
 import com.example.otp.infrastructure.security.SecureRandomOtpCodeGenerator;
+import com.example.otp.infrastructure.sender.CompositeOtpSender;
+import com.example.otp.infrastructure.sender.EmailOtpSender;
 import com.example.otp.infrastructure.sender.FileOtpSender;
+import com.example.otp.infrastructure.sender.SmsOtpSender;
+import com.example.otp.infrastructure.sender.TelegramOtpSender;
 import com.sun.net.httpserver.HttpServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,6 +39,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.file.Path;
+import java.util.List;
 
 public class Main {
 
@@ -56,7 +61,15 @@ public class Main {
         PasswordHasher passwordHasher = new BCryptPasswordHasher();
         TokenProvider tokenProvider = new JwtTokenProvider(appConfig);
         OtpCodeGenerator otpCodeGenerator = new SecureRandomOtpCodeGenerator();
-        OtpSender otpSender = new FileOtpSender(Path.of("otp-codes.txt"));
+
+        List<OtpSender> senders = List.of(
+                new FileOtpSender(Path.of("otp-codes.txt")),
+                new SmsOtpSender(),
+                new EmailOtpSender(),
+                new TelegramOtpSender()
+        );
+
+        CompositeOtpSender otpSender = new CompositeOtpSender(senders);
 
         AuthService authService = new AuthService(
                 userDao,
@@ -83,10 +96,7 @@ public class Main {
         JsonMapper jsonMapper = new JsonMapper();
         HttpResponseWriter responseWriter = new HttpResponseWriter(jsonMapper);
 
-        HttpServer server = HttpServer.create(
-                new InetSocketAddress(appConfig.serverPort()),
-                0
-        );
+        HttpServer server = HttpServer.create(new InetSocketAddress(appConfig.serverPort()), 0);
 
         Router router = new Router(
                 server,
@@ -101,7 +111,6 @@ public class Main {
         );
 
         router.registerRoutes();
-
         server.start();
 
         logger.info("OTP service started on port {}", appConfig.serverPort());
