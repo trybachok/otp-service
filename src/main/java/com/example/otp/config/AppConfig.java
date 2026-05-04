@@ -128,7 +128,7 @@ public final class AppConfig {
             String environmentName,
             String defaultValue
     ) {
-        String environmentValue = System.getenv(environmentName);
+        String environmentValue = EnvironmentConfig.get(environmentName);
 
         if (environmentValue != null && !environmentValue.isBlank()) {
             return environmentValue;

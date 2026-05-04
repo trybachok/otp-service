@@ -88,12 +88,16 @@ public final class EmailOtpSender implements OtpSender {
     }
 
     private Properties loadConfig() {
-        try {
-            Properties props = new Properties();
-            props.load(EmailOtpSender.class.getClassLoader().getResourceAsStream("email.properties"));
-            return props;
-        } catch (Exception exception) {
-            throw new IllegalStateException("Failed to load email configuration", exception);
-        }
+        return SenderConfig.load(
+                "email.properties",
+                new SenderConfig.EnvironmentOverride("email.enabled", "EMAIL_ENABLED"),
+                new SenderConfig.EnvironmentOverride("email.username", "EMAIL_USERNAME"),
+                new SenderConfig.EnvironmentOverride("email.password", "EMAIL_PASSWORD"),
+                new SenderConfig.EnvironmentOverride("email.from", "EMAIL_FROM"),
+                new SenderConfig.EnvironmentOverride("mail.smtp.host", "MAIL_SMTP_HOST"),
+                new SenderConfig.EnvironmentOverride("mail.smtp.port", "MAIL_SMTP_PORT"),
+                new SenderConfig.EnvironmentOverride("mail.smtp.auth", "MAIL_SMTP_AUTH"),
+                new SenderConfig.EnvironmentOverride("mail.smtp.starttls.enable", "MAIL_SMTP_STARTTLS_ENABLE")
+        );
     }
 }

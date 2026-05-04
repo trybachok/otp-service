@@ -64,7 +64,24 @@ git clone <repository-url>
 cd otp-service
 ```
 
-### 2. Запустить приложение
+### 2. Создать `.env`
+
+`docker compose` автоматически читает переменные из файла `.env` в корне проекта. 
+Файл содержит локальные секреты и добавлен в `.gitignore`, поэтому его нужно создать из файла `env.example`:
+
+```bash
+cp env.example .env
+```
+
+Для Docker значения `DB_USERNAME` и `DB_PASSWORD` должны совпадать с `POSTGRES_USER` и `POSTGRES_PASSWORD`. 
+Перед реальным использованием замените `POSTGRES_PASSWORD`, `DB_PASSWORD` и `TOKEN_SECRET` на собственные значения. 
+Например, JWT-секрет можно сгенерировать командой:
+
+```bash
+openssl rand -base64 32
+```
+
+### 3. Запустить приложение
 ```bash
 docker compose up --build
 ```
@@ -74,7 +91,7 @@ docker compose up --build
 docker compose up -d --build
 ```
 
-### 3. Проверить health-check
+### 4. Проверить health-check
 
 ```bash
 curl -i http://localhost:8082/health
@@ -234,7 +251,7 @@ curl -i -X POST http://localhost:8082/api/user/otp/generate \
 
 ## Конфигурация каналов
 
-Настройки каналов задаются в файлах:
+Настройки каналов задаются через переменные окружения из `.env`. Файлы ниже остаются в проекте как безопасные значения по умолчанию без логинов, паролей, токенов и секретов:
 
 * src/main/resources/email.properties
 * src/main/resources/sms.properties
@@ -242,11 +259,39 @@ curl -i -X POST http://localhost:8082/api/user/otp/generate \
 
 **По умолчанию каналы выключены:**
 
-* email.enabled=false
-* sms.enabled=false
-* telegram.enabled=false
+* EMAIL_ENABLED=false
+* SMS_ENABLED=false
+* TELEGRAM_ENABLED=false
 
 В этом режиме каналы работают как эмуляторы (_логируются, но не отправляют реальные сообщения_).
+
+Чтобы включить реальную отправку Email, заполните SMTP-переменные и установите:
+
+```dotenv
+EMAIL_ENABLED=true
+EMAIL_USERNAME=<smtp-login>
+EMAIL_PASSWORD=<smtp-password>
+EMAIL_FROM=<sender-email>
+MAIL_SMTP_HOST=<smtp-host>
+MAIL_SMTP_PORT=587
+```
+
+Чтобы включить SMS через SMPP, заполните данные провайдера и установите:
+
+```dotenv
+SMS_ENABLED=true
+SMPP_HOST=<smpp-host>
+SMPP_PORT=2775
+SMPP_SYSTEM_ID=<smpp-login>
+SMPP_PASSWORD=<smpp-password>
+```
+
+Чтобы включить Telegram, укажите токен бота и установите:
+
+```dotenv
+TELEGRAM_ENABLED=true
+TELEGRAM_BOT_TOKEN=<telegram-bot-token>
+```
 
 ## Фоновый процесс (Scheduler)
 
@@ -259,8 +304,8 @@ curl -i -X POST http://localhost:8082/api/user/otp/generate \
 
 ### Конфигурация
 
-Интервал работы задаётся в `application.properties`:
+Интервал работы задаётся переменной `OTP_EXPIRATION_SCHEDULER_INTERVAL_SECONDS` в `.env`:
 
-```properties
-otp.expiration.scheduler.interval.seconds=60
+```dotenv
+OTP_EXPIRATION_SCHEDULER_INTERVAL_SECONDS=60
 ```

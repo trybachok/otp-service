@@ -99,13 +99,11 @@ public final class TelegramOtpSender implements OtpSender {
     }
 
     private Properties loadConfig() {
-        try {
-            Properties props = new Properties();
-            props.load(TelegramOtpSender.class.getClassLoader().getResourceAsStream("telegram.properties"));
-            return props;
-        } catch (Exception exception) {
-            throw new IllegalStateException("Failed to load Telegram configuration", exception);
-        }
+        return SenderConfig.load(
+                "telegram.properties",
+                new SenderConfig.EnvironmentOverride("telegram.enabled", "TELEGRAM_ENABLED"),
+                new SenderConfig.EnvironmentOverride("telegram.bot_token", "TELEGRAM_BOT_TOKEN")
+        );
     }
 
     private String urlEncode(String value) {

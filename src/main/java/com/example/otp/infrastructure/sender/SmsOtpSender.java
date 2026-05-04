@@ -113,12 +113,15 @@ public final class SmsOtpSender implements OtpSender {
     }
 
     private Properties loadConfig() {
-        try {
-            Properties props = new Properties();
-            props.load(SmsOtpSender.class.getClassLoader().getResourceAsStream("sms.properties"));
-            return props;
-        } catch (Exception exception) {
-            throw new IllegalStateException("Failed to load SMS configuration", exception);
-        }
+        return SenderConfig.load(
+                "sms.properties",
+                new SenderConfig.EnvironmentOverride("sms.enabled", "SMS_ENABLED"),
+                new SenderConfig.EnvironmentOverride("smpp.host", "SMPP_HOST"),
+                new SenderConfig.EnvironmentOverride("smpp.port", "SMPP_PORT"),
+                new SenderConfig.EnvironmentOverride("smpp.system_id", "SMPP_SYSTEM_ID"),
+                new SenderConfig.EnvironmentOverride("smpp.password", "SMPP_PASSWORD"),
+                new SenderConfig.EnvironmentOverride("smpp.system_type", "SMPP_SYSTEM_TYPE"),
+                new SenderConfig.EnvironmentOverride("smpp.source_addr", "SMPP_SOURCE_ADDR")
+        );
     }
 }
