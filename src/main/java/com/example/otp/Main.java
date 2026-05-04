@@ -8,6 +8,7 @@ import com.example.otp.application.port.OtpCodeGenerator;
 import com.example.otp.application.port.OtpSender;
 import com.example.otp.application.port.PasswordHasher;
 import com.example.otp.application.port.TokenProvider;
+import com.example.otp.application.scheduler.OtpExpirationScheduler;
 import com.example.otp.application.service.AuthService;
 import com.example.otp.application.service.OtpConfigService;
 import com.example.otp.application.service.OtpService;
@@ -90,6 +91,11 @@ public class Main {
                 otpSender
         );
 
+        OtpExpirationScheduler otpExpirationScheduler = new OtpExpirationScheduler(
+                otpCodeDao,
+                appConfig.otpExpirationSchedulerIntervalSeconds()
+        );
+
         AuthMiddleware authMiddleware = new AuthMiddleware(tokenProvider);
         RoleGuard roleGuard = new RoleGuard();
 
@@ -111,7 +117,16 @@ public class Main {
         );
 
         router.registerRoutes();
+
         server.start();
+        otpExpirationScheduler.start();
+
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            logger.info("Shutdown started");
+            server.stop(0);
+            otpExpirationScheduler.stop();
+            logger.info("Shutdown completed");
+        }));
 
         logger.info("OTP service started on port {}", appConfig.serverPort());
         logger.info("Health check: http://localhost:{}/health", appConfig.serverPort());

@@ -13,6 +13,7 @@ public final class AppConfig {
     private final String flywayLocations;
     private final String tokenSecret;
     private final long tokenTtlSeconds;
+    private final long otpExpirationSchedulerIntervalSeconds;
 
     private AppConfig(
             int serverPort,
@@ -21,7 +22,8 @@ public final class AppConfig {
             String databasePassword,
             String flywayLocations,
             String tokenSecret,
-            long tokenTtlSeconds
+            long tokenTtlSeconds,
+            long otpExpirationSchedulerIntervalSeconds
     ) {
         this.serverPort = serverPort;
         this.databaseUrl = databaseUrl;
@@ -30,24 +32,33 @@ public final class AppConfig {
         this.flywayLocations = flywayLocations;
         this.tokenSecret = tokenSecret;
         this.tokenTtlSeconds = tokenTtlSeconds;
+        this.otpExpirationSchedulerIntervalSeconds = otpExpirationSchedulerIntervalSeconds;
     }
 
     public static AppConfig load() {
         Properties properties = loadProperties();
 
         int serverPort = Integer.parseInt(
-                getValue(properties, "server.port", "SERVER_PORT", "8081")
+                getValue(properties, "server.port", "SERVER_PORT", "8082")
         );
 
         String databaseUrl = getValue(properties, "db.url", "DB_URL", null);
         String databaseUsername = getValue(properties, "db.username", "DB_USERNAME", null);
         String databasePassword = getValue(properties, "db.password", "DB_PASSWORD", null);
         String flywayLocations = getValue(properties, "flyway.locations", "FLYWAY_LOCATIONS", "classpath:db/migration");
-
         String tokenSecret = getValue(properties, "token.secret", "TOKEN_SECRET", null);
 
         long tokenTtlSeconds = Long.parseLong(
                 getValue(properties, "token.ttl.seconds", "TOKEN_TTL_SECONDS", "3600")
+        );
+
+        long otpExpirationSchedulerIntervalSeconds = Long.parseLong(
+                getValue(
+                        properties,
+                        "otp.expiration.scheduler.interval.seconds",
+                        "OTP_EXPIRATION_SCHEDULER_INTERVAL_SECONDS",
+                        "60"
+                )
         );
 
         return new AppConfig(
@@ -57,7 +68,8 @@ public final class AppConfig {
                 databasePassword,
                 flywayLocations,
                 tokenSecret,
-                tokenTtlSeconds
+                tokenTtlSeconds,
+                otpExpirationSchedulerIntervalSeconds
         );
     }
 
@@ -79,6 +91,18 @@ public final class AppConfig {
 
     public String flywayLocations() {
         return flywayLocations;
+    }
+
+    public String tokenSecret() {
+        return tokenSecret;
+    }
+
+    public long tokenTtlSeconds() {
+        return tokenTtlSeconds;
+    }
+
+    public long otpExpirationSchedulerIntervalSeconds() {
+        return otpExpirationSchedulerIntervalSeconds;
     }
 
     private static Properties loadProperties() {
@@ -121,13 +145,5 @@ public final class AppConfig {
         }
 
         throw new IllegalStateException("Required configuration value is missing: " + propertyName);
-    }
-
-    public String tokenSecret() {
-        return tokenSecret;
-    }
-
-    public long tokenTtlSeconds() {
-        return tokenTtlSeconds;
     }
 }

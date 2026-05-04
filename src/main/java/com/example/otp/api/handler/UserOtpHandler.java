@@ -80,7 +80,11 @@ public final class UserOtpHandler implements HttpHandler {
         } catch (NotFoundException exception) {
             responseWriter.json(exchange, 404, new ErrorResponse("NOT_FOUND", exception.getMessage()));
         } catch (IllegalArgumentException exception) {
-            responseWriter.json(exchange, 400, new ErrorResponse("BAD_REQUEST", "Invalid request"));
+            logger.warn("Invalid user OTP request: {}", exception.getMessage(), exception);
+            responseWriter.json(exchange, 400, new ErrorResponse(
+                    "BAD_REQUEST",
+                    exception.getMessage()
+            ));
         } catch (Exception exception) {
             logger.error("Unexpected error on user OTP endpoint", exception);
             responseWriter.json(exchange, 500, new ErrorResponse("INTERNAL_ERROR", "Internal server error"));
