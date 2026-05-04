@@ -5,6 +5,7 @@ import com.example.otp.application.port.OtpMessage;
 import com.example.otp.application.port.OtpSender;
 import com.example.otp.application.port.PasswordHasher;
 import com.example.otp.domain.exception.BadRequestException;
+import com.example.otp.domain.exception.NotFoundException;
 import com.example.otp.domain.model.Operation;
 import com.example.otp.domain.model.OtpCode;
 import com.example.otp.domain.model.OtpConfig;
@@ -88,6 +89,75 @@ public final class OtpService {
         return savedOtpCode;
     }
 
+    public OtpCode validate(UUID userId, String operationId, String code) {
+        String normalizedOperationId = validateOperationId(operationId);
+        String normalizedCode = validateCode(code);
+
+        Operation operation = operationDao
+                .findByUserIdAndOperationId(userId, normalizedOperationId)
+                .orElseThrow(() -> {
+                    logger.warn("OTP validation failed: operation not found userId={} operationId={}",
+                            userId,
+                            normalizedOperationId
+                    );
+                    return new NotFoundException("Active OTP code not found");
+                });
+
+        OtpCode otpCode = otpCodeDao
+                .findActiveByUserIdAndOperationId(userId, operation.id())
+                .orElseThrow(() -> {
+                    logger.warn("OTP validation failed: active code not found userId={} operationId={}",
+                            userId,
+                            normalizedOperationId
+                    );
+                    return new NotFoundException("Active OTP code not found");
+                });
+
+        Instant now = Instant.now();
+
+        if (otpCode.expiresAt().isBefore(now) || otpCode.expiresAt().equals(now)) {
+            otpCodeDao.markExpired(otpCode.id());
+
+            logger.warn("OTP validation failed: code expired userId={} operationId={} otpId={}",
+                    userId,
+                    normalizedOperationId,
+                    otpCode.id()
+            );
+
+            throw new BadRequestException("OTP code expired");
+        }
+
+        if (!passwordHasher.verify(normalizedCode, otpCode.codeHash())) {
+            logger.warn("OTP validation failed: invalid code userId={} operationId={} otpId={}",
+                    userId,
+                    normalizedOperationId,
+                    otpCode.id()
+            );
+
+            throw new BadRequestException("Invalid OTP code");
+        }
+
+        Instant usedAt = Instant.now();
+        otpCodeDao.markUsed(otpCode.id(), usedAt);
+
+        logger.info("OTP validated successfully userId={} operationId={} otpId={}",
+                userId,
+                normalizedOperationId,
+                otpCode.id()
+        );
+
+        return new OtpCode(
+                otpCode.id(),
+                otpCode.userId(),
+                otpCode.operationId(),
+                otpCode.codeHash(),
+                OtpStatus.USED,
+                otpCode.expiresAt(),
+                otpCode.createdAt(),
+                usedAt
+        );
+    }
+
     private Operation createOperation(UUID userId, String operationId, String description) {
         Operation operation = new Operation(
                 UUID.randomUUID(),
@@ -120,6 +190,20 @@ public final class OtpService {
         }
 
         return normalizedOperationId;
+    }
+
+    private String validateCode(String code) {
+        if (code == null || code.isBlank()) {
+            throw new BadRequestException("OTP code is required");
+        }
+
+        String normalizedCode = code.trim();
+
+        if (!normalizedCode.matches("\\d{4,10}")) {
+            throw new BadRequestException("OTP code must contain from 4 to 10 digits");
+        }
+
+        return normalizedCode;
     }
 
     private String normalizeDescription(String description) {

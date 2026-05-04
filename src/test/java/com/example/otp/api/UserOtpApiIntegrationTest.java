@@ -16,6 +16,7 @@ import com.example.otp.config.AppConfig;
 import com.example.otp.domain.model.Operation;
 import com.example.otp.domain.model.OtpCode;
 import com.example.otp.domain.model.OtpConfig;
+import com.example.otp.domain.model.OtpStatus;
 import com.example.otp.domain.model.Role;
 import com.example.otp.domain.model.User;
 import com.example.otp.infrastructure.dao.OperationDao;
@@ -39,6 +40,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -130,16 +132,7 @@ class UserOtpApiIntegrationTest {
         register("user1", "user123", "USER");
         String userToken = token("user1", "user123");
 
-        HttpResponse<String> response = postWithToken(
-                "/api/user/otp/generate",
-                """
-                {
-                  "operationId": "payment-123",
-                  "description": "Confirm payment"
-                }
-                """,
-                userToken
-        );
+        HttpResponse<String> response = generateOtp(userToken, "payment-123");
 
         assertEquals(201, response.statusCode());
 
@@ -154,19 +147,92 @@ class UserOtpApiIntegrationTest {
     }
 
     @Test
+    void userCanValidateOtp() throws Exception {
+        register("user1", "user123", "USER");
+        String userToken = token("user1", "user123");
+
+        generateOtp(userToken, "payment-validate-1");
+
+        HttpResponse<String> response = validateOtp(
+                userToken,
+                "payment-validate-1",
+                "123456"
+        );
+
+        assertEquals(200, response.statusCode());
+
+        JsonNode json = json(response.body());
+        assertEquals("payment-validate-1", json.get("operationId").asText());
+        assertEquals("USED", json.get("status").asText());
+        assertTrue(json.get("valid").asBoolean());
+
+        assertEquals(OtpStatus.USED, otpCodeDao.latest().status());
+        assertNotNull(otpCodeDao.latest().usedAt());
+    }
+
+    @Test
+    void usedOtpCannotBeValidatedAgain() throws Exception {
+        register("user1", "user123", "USER");
+        String userToken = token("user1", "user123");
+
+        generateOtp(userToken, "payment-repeat");
+        validateOtp(userToken, "payment-repeat", "123456");
+
+        HttpResponse<String> response = validateOtp(
+                userToken,
+                "payment-repeat",
+                "123456"
+        );
+
+        assertEquals(404, response.statusCode());
+
+        JsonNode json = json(response.body());
+        assertEquals("NOT_FOUND", json.get("error").asText());
+        assertEquals("Active OTP code not found", json.get("message").asText());
+    }
+
+    @Test
+    void wrongOtpCodeReturnsBadRequest() throws Exception {
+        register("user1", "user123", "USER");
+        String userToken = token("user1", "user123");
+
+        generateOtp(userToken, "payment-wrong");
+
+        HttpResponse<String> response = validateOtp(
+                userToken,
+                "payment-wrong",
+                "000000"
+        );
+
+        assertEquals(400, response.statusCode());
+
+        JsonNode json = json(response.body());
+        assertEquals("BAD_REQUEST", json.get("error").asText());
+        assertEquals("Invalid OTP code", json.get("message").asText());
+    }
+
+    @Test
     void adminCannotGenerateOtp() throws Exception {
         register("admin", "admin123", "ADMIN");
         String adminToken = token("admin", "admin123");
 
-        HttpResponse<String> response = postWithToken(
-                "/api/user/otp/generate",
-                """
-                {
-                  "operationId": "payment-123",
-                  "description": "Confirm payment"
-                }
-                """,
-                adminToken
+        HttpResponse<String> response = generateOtp(adminToken, "payment-123");
+
+        assertEquals(403, response.statusCode());
+
+        JsonNode json = json(response.body());
+        assertEquals("FORBIDDEN", json.get("error").asText());
+    }
+
+    @Test
+    void adminCannotValidateOtp() throws Exception {
+        register("admin", "admin123", "ADMIN");
+        String adminToken = token("admin", "admin123");
+
+        HttpResponse<String> response = validateOtp(
+                adminToken,
+                "payment-123",
+                "123456"
         );
 
         assertEquals(403, response.statusCode());
@@ -180,22 +246,31 @@ class UserOtpApiIntegrationTest {
         register("user1", "user123", "USER");
         String userToken = token("user1", "user123");
 
-        HttpResponse<String> response = postWithToken(
-                "/api/user/otp/generate",
-                """
-                {
-                  "operationId": "",
-                  "description": "Confirm payment"
-                }
-                """,
-                userToken
-        );
+        HttpResponse<String> response = generateOtp(userToken, "");
 
         assertEquals(400, response.statusCode());
 
         JsonNode json = json(response.body());
         assertEquals("BAD_REQUEST", json.get("error").asText());
         assertEquals("Operation id is required", json.get("message").asText());
+    }
+
+    @Test
+    void validateOtpRejectsEmptyCode() throws Exception {
+        register("user1", "user123", "USER");
+        String userToken = token("user1", "user123");
+
+        HttpResponse<String> response = validateOtp(
+                userToken,
+                "payment-123",
+                ""
+        );
+
+        assertEquals(400, response.statusCode());
+
+        JsonNode json = json(response.body());
+        assertEquals("BAD_REQUEST", json.get("error").asText());
+        assertEquals("OTP code is required", json.get("message").asText());
     }
 
     private HttpResponse<String> register(String login, String password, String role) throws Exception {
@@ -225,6 +300,32 @@ class UserOtpApiIntegrationTest {
         assertEquals(200, response.statusCode());
 
         return json(response.body()).get("token").asText();
+    }
+
+    private HttpResponse<String> generateOtp(String token, String operationId) throws Exception {
+        return postWithToken(
+                "/api/user/otp/generate",
+                """
+                {
+                  "operationId": "%s",
+                  "description": "Confirm payment"
+                }
+                """.formatted(operationId),
+                token
+        );
+    }
+
+    private HttpResponse<String> validateOtp(String token, String operationId, String code) throws Exception {
+        return postWithToken(
+                "/api/user/otp/validate",
+                """
+                {
+                  "operationId": "%s",
+                  "code": "%s"
+                }
+                """.formatted(operationId, code),
+                token
+        );
     }
 
     private HttpResponse<String> post(String path, String body) throws Exception {
@@ -361,15 +462,40 @@ class UserOtpApiIntegrationTest {
                     .stream()
                     .filter(otpCode -> otpCode.userId().equals(userId))
                     .filter(otpCode -> otpCode.operationId().equals(operationId))
-                    .findFirst();
+                    .filter(otpCode -> otpCode.status() == OtpStatus.ACTIVE)
+                    .max(Comparator.comparing(OtpCode::createdAt));
         }
 
         @Override
         public void markUsed(UUID id, Instant usedAt) {
+            OtpCode oldCode = otpCodesById.get(id);
+
+            otpCodesById.put(id, new OtpCode(
+                    oldCode.id(),
+                    oldCode.userId(),
+                    oldCode.operationId(),
+                    oldCode.codeHash(),
+                    OtpStatus.USED,
+                    oldCode.expiresAt(),
+                    oldCode.createdAt(),
+                    usedAt
+            ));
         }
 
         @Override
         public void markExpired(UUID id) {
+            OtpCode oldCode = otpCodesById.get(id);
+
+            otpCodesById.put(id, new OtpCode(
+                    oldCode.id(),
+                    oldCode.userId(),
+                    oldCode.operationId(),
+                    oldCode.codeHash(),
+                    OtpStatus.EXPIRED,
+                    oldCode.expiresAt(),
+                    oldCode.createdAt(),
+                    oldCode.usedAt()
+            ));
         }
 
         @Override
@@ -384,6 +510,13 @@ class UserOtpApiIntegrationTest {
 
         int count() {
             return otpCodesById.size();
+        }
+
+        OtpCode latest() {
+            return otpCodesById.values()
+                    .stream()
+                    .max(Comparator.comparing(OtpCode::createdAt))
+                    .orElseThrow();
         }
     }
 }

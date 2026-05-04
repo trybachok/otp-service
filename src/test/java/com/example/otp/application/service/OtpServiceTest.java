@@ -4,6 +4,7 @@ import com.example.otp.application.port.OtpCodeGenerator;
 import com.example.otp.application.port.OtpSender;
 import com.example.otp.application.port.PasswordHasher;
 import com.example.otp.domain.exception.BadRequestException;
+import com.example.otp.domain.exception.NotFoundException;
 import com.example.otp.domain.model.Operation;
 import com.example.otp.domain.model.OtpCode;
 import com.example.otp.domain.model.OtpConfig;
@@ -111,5 +112,183 @@ class OtpServiceTest {
 
         verify(otpCodeDao, never()).save(any());
         verify(otpSender, never()).send(any());
+    }
+
+    @Test
+    void validateMarksOtpAsUsedWhenCodeIsCorrect() {
+        UUID userId = UUID.randomUUID();
+        UUID operationDbId = UUID.randomUUID();
+        UUID otpId = UUID.randomUUID();
+
+        Operation operation = new Operation(
+                operationDbId,
+                userId,
+                "payment-123",
+                "Confirm payment",
+                Instant.now()
+        );
+
+        OtpCode otpCode = new OtpCode(
+                otpId,
+                userId,
+                operationDbId,
+                "hashed-code",
+                OtpStatus.ACTIVE,
+                Instant.now().plusSeconds(300),
+                Instant.now(),
+                null
+        );
+
+        when(operationDao.findByUserIdAndOperationId(userId, "payment-123")).thenReturn(Optional.of(operation));
+        when(otpCodeDao.findActiveByUserIdAndOperationId(userId, operationDbId)).thenReturn(Optional.of(otpCode));
+        when(passwordHasher.verify("123456", "hashed-code")).thenReturn(true);
+
+        OtpCode result = otpService.validate(userId, "payment-123", "123456");
+
+        assertEquals(OtpStatus.USED, result.status());
+        assertNotNull(result.usedAt());
+
+        verify(otpCodeDao).markUsed(eq(otpId), any(Instant.class));
+    }
+
+    @Test
+    void validateRejectsUnknownOperation() {
+        UUID userId = UUID.randomUUID();
+
+        when(operationDao.findByUserIdAndOperationId(userId, "payment-123"))
+                .thenReturn(Optional.empty());
+
+        NotFoundException exception = assertThrows(
+                NotFoundException.class,
+                () -> otpService.validate(userId, "payment-123", "123456")
+        );
+
+        assertEquals("Active OTP code not found", exception.getMessage());
+
+        verify(otpCodeDao, never()).markUsed(any(), any());
+    }
+
+    @Test
+    void validateRejectsMissingActiveOtpCode() {
+        UUID userId = UUID.randomUUID();
+        UUID operationDbId = UUID.randomUUID();
+
+        Operation operation = new Operation(
+                operationDbId,
+                userId,
+                "payment-123",
+                "Confirm payment",
+                Instant.now()
+        );
+
+        when(operationDao.findByUserIdAndOperationId(userId, "payment-123")).thenReturn(Optional.of(operation));
+        when(otpCodeDao.findActiveByUserIdAndOperationId(userId, operationDbId)).thenReturn(Optional.empty());
+
+        NotFoundException exception = assertThrows(
+                NotFoundException.class,
+                () -> otpService.validate(userId, "payment-123", "123456")
+        );
+
+        assertEquals("Active OTP code not found", exception.getMessage());
+
+        verify(otpCodeDao, never()).markUsed(any(), any());
+    }
+
+    @Test
+    void validateRejectsExpiredOtpAndMarksExpired() {
+        UUID userId = UUID.randomUUID();
+        UUID operationDbId = UUID.randomUUID();
+        UUID otpId = UUID.randomUUID();
+
+        Operation operation = new Operation(
+                operationDbId,
+                userId,
+                "payment-123",
+                "Confirm payment",
+                Instant.now()
+        );
+
+        OtpCode otpCode = new OtpCode(
+                otpId,
+                userId,
+                operationDbId,
+                "hashed-code",
+                OtpStatus.ACTIVE,
+                Instant.now().minusSeconds(1),
+                Instant.now().minusSeconds(300),
+                null
+        );
+
+        when(operationDao.findByUserIdAndOperationId(userId, "payment-123")).thenReturn(Optional.of(operation));
+        when(otpCodeDao.findActiveByUserIdAndOperationId(userId, operationDbId)).thenReturn(Optional.of(otpCode));
+
+        BadRequestException exception = assertThrows(
+                BadRequestException.class,
+                () -> otpService.validate(userId, "payment-123", "123456")
+        );
+
+        assertEquals("OTP code expired", exception.getMessage());
+
+        verify(otpCodeDao).markExpired(otpId);
+        verify(otpCodeDao, never()).markUsed(any(), any());
+    }
+
+    @Test
+    void validateRejectsWrongCode() {
+        UUID userId = UUID.randomUUID();
+        UUID operationDbId = UUID.randomUUID();
+        UUID otpId = UUID.randomUUID();
+
+        Operation operation = new Operation(
+                operationDbId,
+                userId,
+                "payment-123",
+                "Confirm payment",
+                Instant.now()
+        );
+
+        OtpCode otpCode = new OtpCode(
+                otpId,
+                userId,
+                operationDbId,
+                "hashed-code",
+                OtpStatus.ACTIVE,
+                Instant.now().plusSeconds(300),
+                Instant.now(),
+                null
+        );
+
+        when(operationDao.findByUserIdAndOperationId(userId, "payment-123")).thenReturn(Optional.of(operation));
+        when(otpCodeDao.findActiveByUserIdAndOperationId(userId, operationDbId)).thenReturn(Optional.of(otpCode));
+        when(passwordHasher.verify("000000", "hashed-code")).thenReturn(false);
+
+        BadRequestException exception = assertThrows(
+                BadRequestException.class,
+                () -> otpService.validate(userId, "payment-123", "000000")
+        );
+
+        assertEquals("Invalid OTP code", exception.getMessage());
+
+        verify(otpCodeDao, never()).markUsed(any(), any());
+    }
+
+    @Test
+    void validateRejectsEmptyCode() {
+        BadRequestException exception = assertThrows(
+                BadRequestException.class,
+                () -> otpService.validate(UUID.randomUUID(), "payment-123", "")
+        );
+
+        assertEquals("OTP code is required", exception.getMessage());
+    }
+
+    @Test
+    void validateRejectsNonDigitCode() {
+        BadRequestException exception = assertThrows(
+                BadRequestException.class,
+                () -> otpService.validate(UUID.randomUUID(), "payment-123", "abc123")
+        );
+
+        assertEquals("OTP code must contain from 4 to 10 digits", exception.getMessage());
     }
 }

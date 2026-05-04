@@ -2,6 +2,8 @@ package com.example.otp.api.handler;
 
 import com.example.otp.api.dto.otp.GenerateOtpRequest;
 import com.example.otp.api.dto.otp.GenerateOtpResponse;
+import com.example.otp.api.dto.otp.ValidateOtpRequest;
+import com.example.otp.api.dto.otp.ValidateOtpResponse;
 import com.example.otp.api.middleware.AuthMiddleware;
 import com.example.otp.api.middleware.RoleGuard;
 import com.example.otp.api.response.ErrorResponse;
@@ -10,6 +12,7 @@ import com.example.otp.application.security.AuthenticatedUser;
 import com.example.otp.application.service.OtpService;
 import com.example.otp.domain.exception.BadRequestException;
 import com.example.otp.domain.exception.ForbiddenException;
+import com.example.otp.domain.exception.NotFoundException;
 import com.example.otp.domain.exception.UnauthorizedException;
 import com.example.otp.domain.model.OtpCode;
 import com.example.otp.domain.model.Role;
@@ -61,6 +64,11 @@ public final class UserOtpHandler implements HttpHandler {
                 return;
             }
 
+            if ("/api/user/otp/validate".equals(path)) {
+                handleValidate(exchange, method, user);
+                return;
+            }
+
             responseWriter.json(exchange, 404, new ErrorResponse(
                     "NOT_FOUND",
                     "Endpoint not found"
@@ -77,6 +85,10 @@ public final class UserOtpHandler implements HttpHandler {
         } catch (BadRequestException exception) {
             logger.warn("Bad user OTP request: {}", exception.getMessage());
             responseWriter.json(exchange, 400, new ErrorResponse("BAD_REQUEST", exception.getMessage()));
+
+        } catch (NotFoundException exception) {
+            logger.warn("User OTP resource not found: {}", exception.getMessage());
+            responseWriter.json(exchange, 404, new ErrorResponse("NOT_FOUND", exception.getMessage()));
 
         } catch (IllegalArgumentException exception) {
             logger.warn("Invalid user OTP request: {}", exception.getMessage());
@@ -129,5 +141,39 @@ public final class UserOtpHandler implements HttpHandler {
         );
 
         responseWriter.json(exchange, 201, response);
+    }
+
+    private void handleValidate(
+            HttpExchange exchange,
+            String method,
+            AuthenticatedUser user
+    ) throws IOException {
+        if (!"POST".equalsIgnoreCase(method)) {
+            responseWriter.json(exchange, 405, new ErrorResponse(
+                    "METHOD_NOT_ALLOWED",
+                    "Method not allowed"
+            ));
+            return;
+        }
+
+        ValidateOtpRequest request = jsonMapper.read(
+                exchange.getRequestBody(),
+                ValidateOtpRequest.class
+        );
+
+        OtpCode otpCode = otpService.validate(
+                user.userId(),
+                request.getOperationId(),
+                request.getCode()
+        );
+
+        ValidateOtpResponse response = new ValidateOtpResponse(
+                otpCode.id(),
+                request.getOperationId(),
+                otpCode.status().name(),
+                true
+        );
+
+        responseWriter.json(exchange, 200, response);
     }
 }
